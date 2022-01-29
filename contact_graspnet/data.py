@@ -696,7 +696,7 @@ class PointCloudReader:
 
 
 
-    def __del__(self):
-        print('********** terminating renderer **************')
+    # def __del__(self):
+        # print('********** terminating renderer **************')
     
 
