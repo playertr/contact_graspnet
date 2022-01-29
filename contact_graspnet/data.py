@@ -589,6 +589,61 @@ class PointCloudReader:
             mask = np.logical_and(mask, labels != l)
         return pc[mask]
     
+    def get_scene_batch_with_poses(self, scene_idx=None, cam_poses=None, return_segmap=False, save=False):
+        """
+        Render a batch of scene point clouds
+
+        Keyword Arguments:
+            scene_idx {int} -- index of the scene (default: {None})
+            return_segmap {bool} -- whether to render a segmap of objects (default: {False})
+            cam_poses {np.ndarray} -- homogeneous camera poses
+            save {bool} -- Save training/validation data to npz file for later inference (default: {False})
+
+        Returns:
+            [batch_data, cam_poses, scene_idx] -- batch of rendered point clouds, camera poses and the scene_idx
+        """
+        dims = 6 if self._estimate_normals else 3
+        batch_data = np.empty((len(cam_poses), self._raw_num_points, dims), dtype=np.float32)
+        # cam_poses = np.empty((self._batch_size, 4, 4), dtype=np.float32)
+
+        if scene_idx is None:
+            scene_idx = np.random.randint(0,self._num_train_samples)
+
+        obj_paths = [os.path.join(self._root_folder, p) for p in self._scene_obj_paths[scene_idx]]
+        mesh_scales = self._scene_obj_scales[scene_idx]
+        obj_trafos = self._scene_obj_transforms[scene_idx]
+
+        self.change_scene(obj_paths, mesh_scales, obj_trafos, visualize=False)
+
+        batch_segmap, batch_obj_pcs = [], []
+        for i, pose in enumerate(cam_poses):           
+            # 0.005s
+            pc_cam, pc_normals, camera_pose, depth = self.render_random_scene(
+                estimate_normals=self._estimate_normals,
+                camera_pose=pose)
+
+            if return_segmap:
+                segmap, _, obj_pcs = self._renderer.render_labels(depth, obj_paths, mesh_scales, render_pc=True)
+                batch_obj_pcs.append(obj_pcs)
+                batch_segmap.append(segmap)
+
+            batch_data[i,:,0:3] = pc_cam[:,:3]
+            if self._estimate_normals:
+                batch_data[i,:,3:6] = pc_normals[:,:3]
+            cam_poses[i,:,:] = camera_pose
+            
+        if save:
+            K = np.array([[616.36529541,0,310.25881958 ],[0,616.20294189,236.59980774],[0,0,1]])
+            data = {'depth':depth, 'K':K, 'camera_pose':camera_pose, 'scene_idx':scene_idx}
+            if return_segmap:
+                data.update(segmap=segmap)
+            np.savez('results/{}_acronym.npz'.format(scene_idx), data)
+
+        if return_segmap:
+            return batch_data, cam_poses, scene_idx, batch_segmap, batch_obj_pcs
+        else:
+            return batch_data, cam_poses, scene_idx
+
     def get_scene_batch(self, scene_idx=None, return_segmap=False, save=False):
         """
         Render a batch of scene point clouds
