@@ -4,3 +4,8 @@ checkpoints/*
 **/*.pyc
 **/__pycache__
 .vscode
+*.h5
+*.obj
+*.json
+*.out
+*.npy
