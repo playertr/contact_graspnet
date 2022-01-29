@@ -15,6 +15,7 @@ import cv2
 import glob
 import trimesh.transformations as tra
 from scipy.spatial import cKDTree
+from tqdm import tqdm
 
 import provider
 from scene_renderer import SceneRenderer
@@ -39,8 +40,11 @@ def load_scene_contacts(dataset_folder, test_split_only=False, num_test=None, sc
     if test_split_only:
         scene_contact_paths = scene_contact_paths[-num_test:]
     contact_infos = []
-    for contact_path in scene_contact_paths:
-        print(contact_path)
+
+    print("Loading scene contacts.")
+    pbar = tqdm(scene_contact_paths)
+    for contact_path in pbar:
+        pbar.set_description(contact_path)
         try:
             npz = np.load(contact_path, allow_pickle=False)
             contact_info = {'scene_contact_points':npz['scene_contact_points'],
