@@ -12,7 +12,7 @@ import pyrender
 import trimesh
 import trimesh.transformations as tra
 
-from mesh_utils import Object
+from contact_graspnet.mesh_utils import Object
 
 class SceneRenderer:
     def __init__(self, intrinsics=None, fov=np.pi / 6, caching=True, viewing_mode=False):
@@ -81,7 +81,7 @@ class SceneRenderer:
         else:
             camera = pyrender.PerspectiveCamera(yfov=self._fov, aspectRatio=1.0, znear=0.001) # do not change aspect ratio
             self._camera_node = self._scene.add(camera, pose=tra.euler_matrix(np.pi, 0, 0), name='camera')
-            self.renderer = pyrender.OffscreenRenderer(400, 400)
+            self.renderer = pyrender.OffscreenRenderer(300, 300)
 
 
     def _add_table_node(self):
