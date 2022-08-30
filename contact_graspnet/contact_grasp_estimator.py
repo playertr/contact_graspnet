@@ -13,9 +13,9 @@ sys.path.append(os.path.join(BASE_DIR))
 sys.path.append(os.path.join(BASE_DIR, 'pointnet2',  'utils'))
 sys.path.append(os.path.abspath(__file__))
 
-from tf_train_ops import get_bn_decay
-import config_utils
-from data import farthest_points, distance_by_translation_point, preprocess_pc_for_inference, regularize_pc_point_count, depth2pc, reject_median_outliers
+from contact_graspnet.tf_train_ops import get_bn_decay
+import contact_graspnet.config_utils
+from contact_graspnet.data import farthest_points, distance_by_translation_point, preprocess_pc_for_inference, regularize_pc_point_count, depth2pc, reject_median_outliers
 
 class GraspEstimator:
     """
@@ -33,6 +33,8 @@ class GraspEstimator:
         else:
             self._contact_grasp_cfg = cfg
 
+        self._contact_grasp_cfg['MODEL']['model'] = "contact_graspnet.contact_graspnet" 
+        # workaround for pip installable package
         self._model_func = importlib.import_module(self._contact_grasp_cfg['MODEL']['model'])
         self._num_input_points = self._contact_grasp_cfg['DATA']['raw_num_points'] if 'raw_num_points' in self._contact_grasp_cfg['DATA'] else self._contact_grasp_cfg['DATA']['num_point']
         
@@ -385,3 +387,41 @@ class GraspEstimator:
         pc_full, pc_segments = self.extract_point_clouds(depth, K, segmap=segmap, segmap_id=segmap_id, skip_border_objects=skip_border_objects, margin_px=margin_px, z_range=z_range, rgb=rgb)
 
         return self.predict_scene_grasps(sess, pc_full, pc_segments, local_regions=local_regions, filter_grasps=filter_grasps, forward_passes=forward_passes)
+
+    def predict_grasps_from_pcl(self, sess, pc_full, forward_passes):
+
+        # Predict grasps in full pc
+        pc_full = regularize_pc_point_count(pc_full, self._contact_grasp_cfg['DATA']['raw_num_points'])
+        convert_cam_coords=True
+
+
+        # Convert point cloud coordinates from OpenCV to internal coordinates (x left, y up, z front)
+        pc, pc_mean = preprocess_pc_for_inference(pc_full.squeeze(), self._num_input_points, return_mean=True, convert_to_internal_coords=convert_cam_coords)
+
+        if len(pc.shape) == 2:
+            pc_batch = pc[np.newaxis,:,:]
+
+        if forward_passes > 1:
+            pc_batch = np.tile(pc_batch, (forward_passes,1,1))
+            
+        feed_dict = {self.placeholders['pointclouds_pl']: pc_batch,
+                    self.placeholders['is_training_pl']: False}
+
+        # Run model inference
+        pred_grasps_cam, pred_scores, pred_points, offset_pred = sess.run(self.inference_ops, feed_dict=feed_dict)
+
+        pred_grasps_cam = pred_grasps_cam.reshape(-1, *pred_grasps_cam.shape[-2:])
+        pred_points = pred_points.reshape(-1, pred_points.shape[-1])
+        pred_scores = pred_scores.reshape(-1)
+        offset_pred = offset_pred.reshape(-1)
+        
+        # uncenter grasps
+        pred_grasps_cam[:,:3, 3] += pc_mean.reshape(-1,3)
+        pred_points[:,:3] += pc_mean.reshape(-1,3)
+
+        # convert back to opencv coordinates
+        if convert_cam_coords:
+            pred_grasps_cam[:,:2, :] *= -1
+            pred_points[:,:2] *= -1
+
+        return pred_grasps_cam, pred_scores, pred_points, offset_pred
